@@ -36,6 +36,7 @@ namespace Abp.Authorization.Users
         IUserAuthenticationTokenStore<TUser>,
         IUserPermissionStore<TUser>,
         IQueryableUserStore<TUser>,
+        IUserAuthenticatorKeyStore<TUser>,
         ITransientDependency
 
         where TRole : AbpRole<TUser>
@@ -1219,20 +1220,11 @@ namespace Abp.Authorization.Users
 
         public async Task<string> GetUserNameFromDatabaseAsync(long userId)
         {
-            //note: This workaround will not be needed after fixing https://github.com/aspnetboilerplate/aspnetboilerplate/issues/1828
-            var outerUow = _unitOfWorkManager.Current;
             using (var uow = _unitOfWorkManager.Begin(new UnitOfWorkOptions
             {
-                Scope = TransactionScopeOption.RequiresNew,
-                IsTransactional = false,
-                IsolationLevel = IsolationLevel.ReadUncommitted
+                Scope = TransactionScopeOption.Suppress
             }))
             {
-                if (outerUow != null)
-                {
-                    _unitOfWorkManager.Current.SetTenantId(outerUow.GetTenantId());
-                }
-
                 var user = await UserRepository.GetAsync(userId);
                 await uow.CompleteAsync();
                 return user.UserName;
@@ -1284,6 +1276,19 @@ namespace Abp.Authorization.Users
         public virtual async Task RemoveAllPermissionSettingsAsync(TUser user)
         {
             await _userPermissionSettingRepository.DeleteAsync(s => s.UserId == user.Id);
+        }
+
+        private const string InternalLoginProvider = "[AspNetUserStore]";
+        private const string AuthenticatorKeyTokenName = "AuthenticatorKey";
+
+        public virtual async Task SetAuthenticatorKeyAsync(TUser user, string key, CancellationToken cancellationToken)
+        {
+            await SetTokenAsync(user, InternalLoginProvider, AuthenticatorKeyTokenName, key, cancellationToken);
+        }
+
+        public async Task<string> GetAuthenticatorKeyAsync(TUser user, CancellationToken cancellationToken)
+        {
+            return await GetTokenAsync(user, InternalLoginProvider, AuthenticatorKeyTokenName, cancellationToken);
         }
     }
 }
